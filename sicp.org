@@ -1,0 +1,1147 @@
+# -*- coding: utf-8 -*-
+#+TITLE: Structure and Interpretation of Computer Programs
+#+LANGUAGE: en
+#+PROPERTY: header-args :exports code
+#+HTML_MATHJAX: align:"left" mathml:t path:"https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"
+#+OPTIONS: num:nil
+
+
+* 1 Building Abstractions with Procedures
+
+** 1.1 interpreting
+#+BEGIN_SRC scheme
+  10                                      ; => 10
+
+  (+ 5 3 4)                               ; => 12
+
+  (- 9 1)                                 ; => 8
+
+  (/ 6 2)                                 ; => 3
+
+  (+ (* 2 4) (- 4 6))                     ; => 6
+
+  (define a 3)                            ; => #<void>
+
+  (define b (+ a 1))                      ; => #<void>
+
+  (+ a b (* a b))                         ; => 19
+
+  (= a b)                                 ; => #f
+
+  (if (and (> b a) (< b (* a b)))
+      b
+      a)                                  ; => 4
+
+  (cond ((= a 4) 6)
+        ((= b 4) (+ 6 7 a))
+        (else 25))                        ; => 16
+
+  (+ 2 (if (> b a) b a))                  ; => 6
+
+  (* (cond ((> a b) a)
+           ((< a b) b)
+           (else -1))
+     (+ a 1))                             ; => 16
+#+END_SRC
+
+** 1.2 complex expression
+#+BEGIN_SRC scheme
+  (/ (+ 5 4
+        (- 2
+           (- 3
+              (+ 6
+                 (/ 4 5)))))
+     (* 3 (- 6 2) (- 2 7)))               ; => -37/150
+#+END_SRC
+
+** 1.3 sum of squares
+#+BEGIN_SRC scheme
+  (define (square x) (* x x))
+
+  (define (sum-of-squares x y)
+    (+ (square x) (square y)))
+
+  (define (<= x y)
+    (not (> x y)))
+
+  (define (>= x y)
+    (not (< x y)))
+
+  (define (is-smallest x y z)
+    (and (<= x y) (<= x z)))
+
+  (define (sum-of-squares-two x y z)
+    (cond ((is-smallest x y z) (sum-of-squares y z))
+          ((is-smallest y z x) (sum-of-squares z x))
+          ((is-smallest z x y) (sum-of-squares x y))))
+
+  (sum-of-squares-two 1 2 3)              ; => 13
+  (sum-of-squares-two 7 7 9)              ; => 130
+  (sum-of-squares-two -4 -7 -10)          ; => 65
+  (sum-of-squares-two -1 -1 3)            ; => 10
+#+END_SRC
+
+** 1.4 compound expression as operator
+#+BEGIN_SRC scheme
+  (define (a-plus-abs-b a b)
+    ((if (> b 0) + -) a b))
+#+END_SRC
+In the procedure =a-plus-abs-b= we apply the compound procedure =(if (> b 0) +
+-)= to the operands =a= and =b=. The compound procedure evaluates to either =+=
+or =-=, depending on the sign of =b=. So this procedure adds =a= and the
+absolute value of =b=.
+** 1.5 applicative-order or normal-order
+#+BEGIN_SRC scheme
+  (define (p) (p))
+  (define (test x y)
+    (if (= x 0)
+        0
+        y))
+
+  (test 0 (p))                            ; => never returns
+#+END_SRC
+The interpreter will first evaluate the arguments if it uses applicative-order
+evaluation. In =(test 0 (p))= The argument =(p)= evaluates to =(p)=, and the
+interpreter will forever apply this substitution, never starting on =test=.
+
+With normal-order evaluation the interpreter will do the following
+substitutions:
+#+BEGIN_SRC scheme
+  (test 0 (p))
+  ;; =>
+  (if (= 0 0)
+      0
+      y)
+  ;; =>
+  (if #t
+      0
+      y)
+  ;; =>
+  0
+#+END_SRC
+So the difference in the result shows the type of evaluation order.
+** 1.6 new-if as procedure
+#+BEGIN_SRC scheme
+  (define (sqrt-iter guess x)
+    (if (good-enough? guess x)
+        guess
+        (sqrt-iter (improve guess x)
+                   x)))
+  (define (improve guess x)
+    (average guess (/ x guess)))
+  (define (average x y)
+    (/ (+ x y) 2))
+  (define (good-enough? guess x)
+    (< (abs (- (square guess) x)) 0.001))
+  (define (sqrt x)
+    (sqrt-iter 1.0 x))
+
+  ;; with new-if
+  (define (new-if predicate then-clause else-clause)
+    (cond (predicate then-clause)
+          (else else-clause)))
+  (define (sqrt-iter guess x)
+    (new-if (good-enough? guess x)
+        guess
+        (sqrt-iter (improve guess x)
+                   x)))
+#+END_SRC
+When we evaluate the new =sqrt-iter= with =new-if=, the interpreter never
+returns and keeps eating RAM. This occurs because our interpreter uses an
+applicative-order evalution. The substitutions make this clear:
+#+BEGIN_SRC scheme
+  (sqrt-iter guess x)
+  ;; =>
+  (new-if (good-enough? guess x)
+          guess
+          (sqrt-iter (improve guess x)
+                     x))
+  ;; =>
+  (new-if #f
+          guess
+          (new-if (good-enough? (improve guess x) x)
+                  (improve guess x)
+                  (sqrt-iter (improve (improve guess x)
+                                      x))))
+  ;; =>
+  ;; ...
+#+END_SRC
+** 1.7 better good-enough?
+#+BEGIN_SRC scheme
+  (sqrt 7e100)                            ; => 2.6457513110645905e+50
+  (sqrt 2e-100)                           ; => 0.03125
+
+  (define (good-enough? guess oldguess x)
+    (< (/ (abs (- guess oldguess)) guess) 0.001))
+
+  (define (sqrt-iter guess oldguess x)
+    (if (good-enough? guess oldguess x)
+        guess
+        (sqrt-iter (improve guess x) guess x)))
+  (define (sqrt x)
+    (sqrt-iter 1.0 x x))
+
+  (sqrt 7e100)                            ; => 2.6457513118537715e+50
+  (sqrt 2e-100)                           ; => 1.4142135641919046e-50
+#+END_SRC
+The original =good-enough?= will check if =(< (abs (- (square guess) x))
+0.001)=, =guess= will pass this test too easily if =x= is very small. With the
+new =good-enough?= square roots are computed more reliably.
+
+For very large numbers there are no problems with either implementation. (?)
+** 1.8 cube root
+#+BEGIN_SRC scheme
+  (define (cube-root x)
+    (define (good-enough? guess oldguess)
+      (< (/ (abs (- guess oldguess)) guess) 0.001))
+    (define (improve guess)
+      (/ (+ (/ x (square guess))
+            (* 2 guess))
+         3))
+    (define (cube-iter guess oldguess)
+      (if (good-enough? guess oldguess)
+          guess
+          (cube-iter (improve guess) guess)))
+    (cube-iter 1.0 x))
+
+  (cube-root 729)                         ; => 9.000000000053902
+  (cube-root 13e-40)                      ; => 1.0913928921878333e-13
+  (cube-root 12345e70)                    ; => 4.979247708103475e+24
+#+END_SRC
+I am using block structure so =cube-root= is a better black-box.
+** 1.9 recursion and iteration
+Both procedures are recursive but yield different processes. The procedure
+#+BEGIN_SRC scheme
+  (define (+ a b)
+    (if (= a 0)
+        b
+        (inc (+ (dec a) b))))
+#+END_SRC
+generates a recursive process:
+#+BEGIN_SRC scheme
+  (+ 4 5)
+  (inc (+ 3 5))
+  (inc (inc (+ 2 5)))
+  (inc (inc (inc (+ 1 5))))
+  (inc (inc (inc (inc (+ 0 5)))))
+  (inc (inc (inc (inc 5))))
+  (inc (inc (inc 6)))
+  (inc (inc 7))
+  (inc 8)
+  9
+#+END_SRC
+While the procedure
+#+BEGIN_SRC scheme
+  (define (+ a b)
+    (if (= a 0)
+        b
+        (+ (dec a) (inc b))))
+#+END_SRC
+generates an iterative process:
+#+BEGIN_SRC scheme
+  (+ 4 5)
+  (+ 3 6)
+  (+ 2 7)
+  (+ 1 8)
+  (+ 0 9)
+  9
+#+END_SRC
+** 1.10 Ackermann's function
+#+BEGIN_SRC scheme
+  (define (A x y)
+    (cond ((= y 0) 0)
+          ((= x 0) (* 2 y))
+          ((= y 1) 2)
+          (else (A (- x 1)
+                   (A x (- y 1))))))
+
+  (A 1 10)                                ; => 1024
+  (A 2 4)                                 ; => 65536
+  (A 3 3)                                 ; => 65536
+#+END_SRC
+=(define (f n) (A 0 n))= defines $f(n)=2y$. \\
+=(define (g n) (A 1 n))= defines $g(0)=0$ and $g(n)=2^n$. This can be seen by
+working out the substitutions:
+#+BEGIN_SRC scheme
+  (A 1 y)
+  (A 0 (A 1 (- y 1)))
+  (A 0 (A 0 (A 1 (- y 2))))
+  (A 0 (A 0 (A 0 ... (A 1 (- y (- y 1))) ... )))
+  (A 0 (A 0 (A 0  ... (A 1 1) ... )))
+  (* 2 (* 2 (* 2 ... 2 ... )))
+#+END_SRC
+
+=(define (h n) (A 2 n))= defines $h(n)=2^{h(n-1)}$. This time we'll look at some
+of the values of $h$:
+#+BEGIN_SRC scheme
+  (h 0)                                   ; => 0
+  (h 1)                                   ; => 2 = 2^1
+  (h 2)                                   ; => 4 = 2^2
+  (h 3)                                   ; => 16 = 2^4
+  (h 4)                                   ; => 65536 = 2^16
+  (h 5)                                   ; => 2^65536 = http://pastebin.com/hF5RvMuf
+#+END_SRC
+** 1.11 recurrence relation
+With a recursive process:
+#+BEGIN_SRC scheme
+  (define (f n)
+    (cond ((< n 3) n)
+          (else (+ (f (- n 1))
+                   (* 2 (f (- n 2)))
+                   (* 3 (f (- n 3)))))))
+#+END_SRC
+With an iterative process:
+#+BEGIN_SRC scheme
+  (define (f n)
+    (define (f-iter a b c count)
+      (if (= count 0)
+          c
+          (f-iter (+ a (* 2 b) (* 3 c)) a b (- count 1))))
+    (f-iter 2 1 0 n))
+
+  (f 3)                                   ; => 4
+  (f 4)                                   ; => 11
+  (f 5)                                   ; => 25
+  (f 6)                                   ; => 59
+#+END_SRC
+** 1.12 Pascal's triangle
+#+BEGIN_SRC scheme
+  (define (pascal a b)
+    (if (or (= a b) (= 1 b))
+        1
+        (+ (pascal (- a 1) (- b 1))
+           (pascal (- a 1) b))))
+#+END_SRC
+=pascal= computes the Pascal number at row =a= column =b=, where for both we
+start counting at 1.
+** TODO 1.13 Fibonacci
+** TODO 1.14
+** 1.15 sine
+a. 5 times. The argument of the sine will be divided by three until it's smaller
+than 0.1, each time applying another =p=. So we're looking for $x$ such that
+$\frac{12.15}{3^x}=0.1$. We find $x=\frac{\ln 121.5}{\ln 3}=4.4$, so we divide
+and apply =p= 5 times.
+
+b. We already found a formula for how many times we apply =p=: $\log_3 a$
+rounded up to the nearest integer. So the order of growth is $\Theta(\log_3 a)$
+for both space and time.
+** 1.16 iterative fast exponentiation
+#+BEGIN_SRC scheme
+  (define (fast-expt b n)
+    (define (expt-iter b a n)
+      (cond ((= n 0) a)
+            ((even? n) (expt-iter (square b) a (/ n 2)))
+            (else (expt-iter b (* a b) (- n 1)))))
+    (expt-iter b 1 n))
+
+  (fast-expt 3 3)                         ; => 27
+  (fast-expt 2 10)                        ; => 1024
+#+END_SRC
+** 1.17 fast multiplication recursive
+#+BEGIN_SRC scheme
+  (define (fast-mult a b)
+    (cond ((= b 0) 0)
+          ((= b 1) a)
+          ((even? b) (fast-mult (double a) (halve b)))
+          (else (+ a (fast-mult a (- b 1))))))
+#+END_SRC
+** 1.18 fast multiplication iterative
+#+BEGIN_SRC scheme
+  (define (fast-mult a b)
+    (define (mult-iter a b s)
+      (cond ((= b 0) s)
+            ((even? b) (mult-iter (double a) (halve b) s))
+            (else (mult-iter a (- b 1) (+ s a)))))
+    (mult-iter a b 0))
+
+  (fast-mult 0 0)                         ; => 0
+  (fast-mult 66 92)                       ; => 6072
+#+END_SRC
+We put the additions, that the interpreter had to keep track of in the recursive
+process, in the variable =s=.
+** 1.19 logarithmic Fibonacci
+We have the transformations $T_{pq}$ that transforms the pair $(a, b)$ as
+$a \leftarrow bq + aq + ap$ and $b \leftarrow bp + aq$. Applying $T_{pq}$ twice:
+$a \leftarrow bq + aq + ap = (bp + aq)q + (bq + aq + ap)q + (bq + aq + ap)p =
+b(2pq + q^2) + a(2pq + q^2) + a(p^2 + q^2) \implies p' = p^2 + q^2, q' = q^2 + 2pq$.
+
+And this is consistent with the transformation of $b$: \\
+$b \leftarrow bp + aq = (bp + aq)p + (bq + aq + ap)q =
+bp^2 + apq + bq^2 + aq^2 + apq = b(p^2 + q^2) + a(q^2 + 2pq)$. \\
+$\implies p' = p^2+q^2, q' = q^2 + 2pq$.
+
+This leads us to the following procedure computing the Fibonacci numbers in
+logarithmic time:
+#+BEGIN_SRC scheme
+  (define (fib n)
+    (fib-iter 1 0 0 1 n))
+
+  (define (fib-iter a b p q count)
+    (cond ((= count 0) b)
+          ((even? count)
+           (fib-iter a
+                     b
+                     (+ (square p) (square q))
+                     (+ (* 2 p q) (square q))
+                     (/ count 2)))
+          (else (fib-iter (+ (* b q) (* a q) (* a p))
+                          (+ (* b p) (* a q))
+                          p
+                          q
+                          (- count 1)))))
+#+END_SRC
+** 1.20 normal/applicative order gcd
+With normal-order evaluation =remainder= is performed 18 times:
+#+BEGIN_SRC scheme
+  (define (gcd a b)
+    (if (= b 0)
+        a
+        (gcd b (remainder a b))))
+
+  (gcd 206 40)
+  (gcd 40 (remainder 206 40))
+  (if (= (remainder 206 40) 0) ...)
+  (if (= (6 0) ...))
+  (gcd (remainder 206 40) (remainder 40 (remainder 206 40)))
+  (if (= (remainder 40 (remainder 206 40)) 0) ...)
+  (if (= (remainder 40 6) 0) ...)
+  (if (= 4 0) ...)
+  (gcd (remainder 40 (remainder 206 40))
+       (remainder (remainder 206 40) (remainder 40 (remainder 206 40))))
+  (if (= (remainder (remainder 206 40) (remainder 40 (remainder 206 40))) 0) ...)
+  (if (= (remainder (remainder 206 40) (remainder 40 6)) 0) ...)
+  (if (= (remainder (remainder 206 40) 4) 0) ...)
+  (if (= (remainder 6 4) 0) ...)
+  (if (= 2 0) ...)
+  (gcd (remainder (remainder 206 40) (remainder 40 (remainder 206 40)))
+       (remainder (remainder 40 (remainder 206 40))
+                  (remainder (remainder 206 40) (remainder 40 (remainder 206 40)))))
+  (if (= (remainder (remainder 40 (remainder 206 40))
+                    (remainder (remainder 206 40)
+                               (remainder 40 (remainder 206 40)))) 0) ...)
+  (if (= (remainder (remainder 40 (remainder 206 40))
+                    (remainder (remainder 206 40)
+                               (remainder 40 6))) 0) ...)
+  (if (= (remainder (remainder 40 (remainder 206 40))
+                    (remainder (remainder 206 40) 4)) 0) ...)
+  (if (= (remainder (remainder 40 (remainder 206 40)) (remainder 6 4)) 0) ...)
+  (if (= (remainder (remainder 40 (remainder 206 40)) 2) 0) ...)
+  (if (= (remainder (remainder 40 6) 2) 0) ...)
+  (if (= (remainder 4 2) 0) ...)
+  (if (= 0 0) ...)
+  (remainder (remainder 206 40) (remainder 40 (remainder 206 40)))
+  (remainder (remainder 206 40) (remainder 40 6))
+  (remainder (remainder 206 40) 4)
+  (remainder 6 4)
+  2
+#+END_SRC
+In applicative-order evaluation =remainder= is applied 4 times:
+#+BEGIN_SRC scheme
+  (gcd 206 40)
+  (if (= 40 0) ...)
+  (gcd 40 (remainder 206 40))
+  (gcd 40 6)
+  (if (= 6 0) ...)
+  (gcd 6 (remainder 40 6))
+  (gcd 6 4)
+  (if (= 4 0) ...)
+  (gcd 4 (remainder 6 4))
+  (gcd 4 2)
+  (if (= 2 0) ...)
+  (gcd 2 (remainder 4 2))
+  (gcd 2 0)
+  (if (= 0 0) ...)
+  2
+#+END_SRC
+So here we see that Euclid's algorithm is more efficient with applicative-order
+evaluation.
+** 1.21 smallest divisor
+#+BEGIN_SRC scheme
+  (define (smallest-divisor n)
+    (find-divisor n 2))
+
+  (define (find-divisor n test-divisor)
+    (cond ((> (square test-divisor) n) n)
+          ((divides? test-divisor n) test-divisor)
+          (else (find-divisor n (+ test-divisor 1)))))
+
+  (define (divides? a b)
+    (= (remainder b a) 0))
+
+  (smallest-divisor 199)                  ; => 199
+  (smallest-divisor 1999)                 ; => 1999
+  (smallest-divisor 19999)                ; => 7
+#+END_SRC
+** 1.22 search for primes
+#+BEGIN_SRC scheme
+  (define (search-for-primes a b)
+    ;; search for all primes between a and b
+    (define (search a b)
+      (cond ((> a b) (newline) (display "Done!"))
+            (else (timed-prime-test a)
+                  (search (+ a 2) b))))
+    (if (even? a) (search (+ a 1) b) (search a b)))
+
+  (search-for-primes 1e11 (+ 1e11 60))
+  (search-for-primes 1e12 (+ 1e12 70))
+  (search-for-primes 1e13 (+ 1e13 100))
+  (search-for-primes 1e14 (+ 1e14 100))
+#+END_SRC
+I looked at primes at a higher order of magnitude because my machine is too
+fast. In the following table we see the reported times (the average of the three
+smallest prime numbers) at different orders of magnitude:
+|    n | time (s) | previous time × √10  | c × √n |
+|------+----------+---------------------+--------|
+| 1e11 |     0.88 |                   - |   0.88 |
+| 1e12 |     2.80 |                2.78 |   2.78 |
+| 1e13 |     8.71 |                8.85 |    8.8 |
+| 1e14 |     28.6 |                27.5 |   27.8 |
+Comparing the second and third column, we can recognize the order of growth of
+$\Theta(\sqrt{n})$. And comparing the second and last column, we can see that
+the runtime is proportional to the number of steps for this computation. The
+constant was calculated as: $c=\sqrt{1e11} * 0.88$.
+
+The prime numbers found were:
+- 1e11: 100000000003, 100000000019, 100000000057
+- 1e12: 1000000000039, 1000000000061, 1000000000063
+- 1e13: 10000000000037, 10000000000051, 10000000000099
+- 1e14: 100000000000031, 100000000000067, 100000000000097
+*** raw data                                                       :noexport:
+#+BEGIN_SRC text
+  100000000001.
+  100000000003. *** .91
+  100000000005.
+  100000000007.
+  100000000009.
+  100000000011.
+  100000000013.
+  100000000015.
+  100000000017.
+  100000000019. *** .87
+  100000000021.
+  100000000023.
+  100000000025.
+  100000000027.
+  100000000029.
+  100000000031.
+  100000000033.
+  100000000035.
+  100000000037.
+  100000000039.
+  100000000041.
+  100000000043.
+  100000000045.
+  100000000047.
+  100000000049.
+  100000000051.
+  100000000053.
+  100000000055.
+  100000000057. *** .8600000000000001
+  100000000059.
+  Done!
+  ;Unspecified return value
+
+
+  1000000000001.
+  1000000000003.
+  1000000000005.
+  1000000000007.
+  1000000000009.
+  1000000000011.
+  1000000000013.
+  1000000000015.
+  1000000000017.
+  1000000000019.
+  1000000000021.
+  1000000000023.
+  1000000000025.
+  1000000000027.
+  1000000000029.
+  1000000000031.
+  1000000000033.
+  1000000000035.
+  1000000000037.
+  1000000000039. *** 2.8
+  1000000000041.
+  1000000000043.
+  1000000000045.
+  1000000000047.
+  1000000000049.
+  1000000000051.
+  1000000000053.
+  1000000000055.
+  1000000000057.
+  1000000000059.
+  1000000000061. *** 2.75
+  1000000000063. *** 2.8499999999999996
+  1000000000065.
+  1000000000067.
+  1000000000069.
+  Done!
+  ;Unspecified return value
+
+
+  10000000000001.
+  10000000000003.
+  10000000000005.
+  10000000000007.
+  10000000000009.
+  10000000000011.
+  10000000000013.
+  10000000000015.
+  10000000000017.
+  10000000000019.
+  10000000000021.
+  10000000000023.
+  10000000000025.
+  10000000000027.
+  10000000000029.
+  10000000000031.
+  10000000000033.
+  10000000000035.
+  10000000000037. *** 8.74
+  10000000000039.
+  10000000000041.
+  10000000000043.
+  10000000000045.
+  10000000000047.
+  10000000000049.
+  10000000000051. *** 8.560000000000002
+  10000000000053.
+  10000000000055.
+  10000000000057.
+  10000000000059.
+  10000000000061.
+  10000000000063.
+  10000000000065.
+  10000000000067.
+  10000000000069.
+  10000000000071.
+  10000000000073.
+  10000000000075.
+  10000000000077.
+  10000000000079.
+  10000000000081.
+  10000000000083.
+  10000000000085.
+  10000000000087.
+  10000000000089.
+  10000000000091.
+  10000000000093.
+  10000000000095.
+  10000000000097.
+  10000000000099. *** 8.82
+  Done!
+  ;Unspecified return value
+
+
+  100000000000001.
+  100000000000003.
+  100000000000005.
+  100000000000007.
+  100000000000009.
+  100000000000011.
+  100000000000013.
+  100000000000015.
+  100000000000017.
+  100000000000019.
+  100000000000021.
+  100000000000023.
+  100000000000025.
+  100000000000027.
+  100000000000029.
+  100000000000031. *** 28.550000000000004
+  100000000000033.
+  100000000000035.
+  100000000000037.
+  100000000000039.
+  100000000000041.
+  100000000000043.
+  100000000000045.
+  100000000000047.
+  100000000000049.
+  100000000000051.
+  100000000000053.
+  100000000000055.
+  100000000000057.
+  100000000000059.
+  100000000000061.
+  100000000000063.
+  100000000000065.
+  100000000000067. *** 28.620000000000005
+  100000000000069.
+  100000000000071.
+  100000000000073.
+  100000000000075.
+  100000000000077.
+  100000000000079.
+  100000000000081.
+  100000000000083.
+  100000000000085.
+  100000000000087.
+  100000000000089.
+  100000000000091.
+  100000000000093.
+  100000000000095.
+  100000000000097. *** 28.599999999999994
+  100000000000099. *** 27.01000000000002
+  Done!
+  ;Unspecified return value
+#+END_SRC
+** 1.23 only test for odd divisors
+#+BEGIN_SRC scheme
+  (define (next k)
+    (if (= k 2) 3 (+ k 2)))
+#+END_SRC
+|    n | old time | new time | ratio |
+|------+----------+----------+-------|
+| 1e11 |     0.35 |     0.23 |  1.52 |
+| 1e12 |     1.09 |     0.69 |  1.58 |
+| 1e13 |     3.46 |     2.17 |  1.59 |
+| 1e14 |     10.9 |     6.90 |  1.58 |
+From the ratio (old / new) we see that the new procedure is only about 1.6 times
+as fast as the original. We expected that halving the amount of divisors would
+make the program run twice as fast. But probably checking divisibility doesn't
+cost the same amount of time for odd and even integers.
+
+*** raw data                                                       :noexport:
+#+BEGIN_SRC text
+  ;Value: find-divisor
+  ; these are the times with the optimization
+
+  100000000003 *** .2400000000000091
+  100000000019 *** .21999999999997044
+  100000000057 *** .22000000000002728
+  ;Value 14: (#!unspecific #!unspecific #!unspecific)
+
+
+  1000000000039 *** .6899999999999977
+  1000000000061 *** .6999999999999886
+  1000000000063 *** .6899999999999977
+  ;Value 15: (#!unspecific #!unspecific #!unspecific)
+
+
+  10000000000037 *** 2.170000000000016
+  10000000000051 *** 2.169999999999959
+  10000000000099 *** 2.160000000000025
+  ;Value 16: (#!unspecific #!unspecific #!unspecific)
+
+
+  100000000000031 *** 6.860000000000014
+  100000000000067 *** 6.96999999999997
+  100000000000097 *** 6.8700000000000045
+  ;Value 17: (#!unspecific #!unspecific #!unspecific)
+
+  ;Value: find-divisor
+  ; These are the times with the old smallest-divisor
+
+  100000000003 *** .36000000000001364
+  100000000019 *** .339999999999975
+  100000000057 *** .36000000000001364
+  ;Value 18: (#!unspecific #!unspecific #!unspecific)
+
+
+  1000000000039 *** 1.0900000000000318
+  1000000000061 *** 1.079999999999984
+  1000000000063 *** 1.099999999999966
+  ;Value 19: (#!unspecific #!unspecific #!unspecific)
+
+
+  10000000000037 *** 3.4700000000000273
+  10000000000051 *** 3.4499999999999886
+  10000000000099 *** 3.4499999999999886
+  ;Value 20: (#!unspecific #!unspecific #!unspecific)
+
+
+  100000000000031 *** 10.890000000000043
+  100000000000067 *** 10.92999999999995
+  100000000000097 *** 10.890000000000043
+  ;Value 21: (#!unspecific #!unspecific #!unspecific)
+#+END_SRC
+** 1.24 Fermat test
+#+BEGIN_SRC scheme
+  (define (start-prime-test n start-time)
+    (if (fast-prime? n 10000)
+        (report-prime (- (runtime) start-time))))
+#+END_SRC
+How many steps =fast-prime?= has to take depends on how many Fermat tests we
+apply. With 10000 tests all previous found primes pass the primality test. We
+will compare the times for the 1e11 and 1e14 primes:
+|    n | time (s) |
+|------+----------|
+| 1e11 |     0.85 |
+| 1e14 |      1.0 |
+The difference in n is of the order of 1000, so with a $\Theta(\log{n})$
+algorithm we expect that it will take $log_2{1000} \approx 10$ as many more
+steps, yet the growth in time is much smaller, about 18%.
+
+** 1.25 simpler expmod ?
+The proposed simpler version of =expmod= takes much more time, I haven't been
+able to check a single prime. The difference here is that our values for =exp=
+are very large, so the proposed procedure would first calculate these large
+numbers. The =expmod= we're using takes the remainder in the intermediate
+results, so the calculations are with smaller numbers.
+
+** 1.26 slow fast-prime?
+Because Louis doesn't use =square= but squares it himself explicitly, he is also
+computing =expmod= twice (exponential growth). So every =expmod= will call
+itself twice, so the order of the algorithm is: $2^{\log{n}}=n$.
+** 1.27 Carmichael numbers
+#+BEGIN_SRC scheme
+  (define (expmod base exp m)
+    (cond ((= exp 0) 1)
+          ((even? exp)
+           (remainder (square (expmod base (/ exp 2) m))
+                      m))
+          (else
+           (remainder (* base (expmod base (- exp 1) m))
+                      m))))
+
+  (define (full-fermat n)
+    (define (fermat n a)
+      (cond ((= a 0) true)
+            ((= a (remainder (expmod a n n) n))
+             (fermat n (- a 1)))
+            (else false)))
+    (fermat n (- n 1)))
+
+  (full-fermat 561)                       ; => #t
+  (full-fermat 1105)                      ; => #t
+  (full-fermat 1729)                      ; => #t
+  (full-fermat 2465)                      ; => #t
+  (full-fermat 2821)                      ; => #t
+  (full-fermat 6601)                      ; => #t
+#+END_SRC
+
+** TODO 1.28 Miller-Rabin test
+#+BEGIN_SRC scheme
+
+#+END_SRC
+** 1.29 Simpson's Rule
+We have
+\begin{equation}
+\frac{h}{3} \left( y_0 + 4y_1 + 2y_2 + 4y_3 + 2y_4 + ... + 2y_{n-2} +
+4y_{y-1} + y_n \right) =
+\frac{h}{3} \left( y_0 + y_n + \sum\limits_{k=1}^{n/2} 4y_{2k-1} +
+\sum\limits_{k=1}^{n/2-2} 2y_{2k} \right) =
+\frac{h}{3} \left( y_0 + y_n +
+4 \sum\limits_{k=1}^{n/2} y_{2k-1} + 2 \sum\limits_{k=1}^{n/2-2} y_{2k} \right)
+\end{equation}
+where the first sum is over the odd, and the second over the even integers. In
+code this will be:
+#+BEGIN_SRC scheme
+  (define (sum term a next b)
+    (if (> a b)
+        0
+        (+ (term a)
+           (sum term (next a) next b))))
+
+  (define (integrate f a b n)
+    (define h (/ (- b a) n))
+    (define (y k) (f (+ a (* k h))))
+    (define (plus2 x) (+ x 2))
+    (* (/ h 3)
+       (+ (y 0) (y n)
+          (* 4 (sum y 1 plus2 (- n 1)))
+          (* 2 (sum y 2 plus2 (- n 2))))))
+
+  (integrate cube 0 1 100)                ; => 1/4
+  (integrate cube 0 1 1000)               ; => 1/4
+#+END_SRC
+We see that we get the exact answer with this method, it converged faster than
+the previous =integral= procedure.
+** 1.30 iterative sum
+#+BEGIN_SRC scheme
+  (define (sum term a next b)
+    (define (iter a result)
+      (if (> a b)
+          result
+          (iter (next a) (+ result (term a)))))
+    (iter a 0))
+#+END_SRC
+** 1.31 product
+a.
+#+BEGIN_SRC scheme
+  (define (product term a next b)
+    (if (> a b)
+        1
+        (* (term a)
+           (product term (next a) next b))))
+
+  (define (factorial n)
+    (define (id x) x)
+    (define (inc x) (+ x 1))
+    (product id 1 inc n))
+
+  (factorial 12)                          ; => 479001600
+#+END_SRC
+Note that:
+\begin{equation}
+\frac{\pi}{4} = \frac{2 \cdot 4 \cdot 4 \cdot 6 \cdot 6 \cdot 8 \dots}{3 \cdot 3 \cdot 5
+\cdot 5 \cdot 7 \cdot 7 \dots} =
+\prod\limits_{n=1}^\infty \frac{2n \cdot (2n + 2)}{(2n + 1)^2}
+\end{equation}
+So:
+#+BEGIN_SRC scheme
+  (define (pi k)
+    (define (p n)
+      (/ (* n (+ n 2))
+         (square (+ n 1))))
+    (define (plus2 x) (+ x 2))
+    (* 4
+       (product p 2 plus2 k)))
+
+  (exact->inexact (pi 50000))             ; => 3.141624068416808
+#+END_SRC
+b. Now with an iterative process:
+#+BEGIN_SRC scheme
+  (define (product term a next b)
+    (define (iter a result)
+      (if (> a b)
+          result
+          (iter (next a) (* result (term a)))))
+    (iter a 1))
+#+END_SRC
+** 1.32 accumulate
+a.
+#+BEGIN_SRC scheme
+  (define (accumulate combiner null-value term a next b)
+    (if (> a b)
+        null-value
+        (combiner (term a)
+                  (accumulate combiner null-value term (next a) next b))))
+
+  (define (sum term a next b)
+    (accumulate + 0 term a next b))
+
+  (define (product term a next b)
+    (accumulate * 1 term a next b))
+#+END_SRC
+b. Iterative:
+#+BEGIN_SRC scheme
+  (define (accumulate combiner null-value term a next b)
+    (define (iter a result)
+      (if (> a b)
+          result
+          (iter (next a) (combiner result (term a)))))
+    (iter a null-value))
+#+END_SRC
+** 1.33 filtered-accumulate
+#+BEGIN_SRC scheme
+  (define (filtered-accumulate combiner null-value filter term a next b)
+    (define (iter a result)
+      (if (> a b)
+          result
+          (if (filter a)
+              (iter (next a) (combiner result (term a)))
+              (iter (next a) result))))
+    (iter a null-value))
+#+END_SRC
+a.
+#+BEGIN_SRC scheme
+  (define (sum-square-primes a b)
+    (filtered-accumulate + 0 prime? square a 1+ b))
+
+  (sum-square-primes 0 10)                ; => 87
+#+END_SRC
+b.
+#+BEGIN_SRC scheme
+  (define (chi n)
+    (define (coprime? i)
+      (= 1 (gcd i n)))
+    (define (id a) a)
+    (filtered-accumulate * 1 coprime? id 2 1+ n))
+
+  (chi 8)                                 ; => 105
+  (chi 20)                                ; => 8729721
+#+END_SRC
+** 1.34 error
+The interpreter will encounter an error, because =2= is not a function:
+#+BEGIN_SRC scheme
+  (define (f g)
+    (g 2))
+
+  (f f)
+  (f 2)
+  (2 2)                                   ; => The object 2 is not applicable.
+#+END_SRC
+** 1.35 golden ratio
+$\phi = \frac{1}{2} (1 + \sqrt{5})$, $f(x) = 1 + 1/x$. And $f(\phi) = 1 +
+\frac{1}{\frac{1}{2}(1 + \sqrt{5})} = 1 + \frac{2}{1 + \sqrt{5}} =
+1 + \frac{2(1 - \sqrt{5})}{-4} = 1 - \frac{1}{2} + \frac{1}{2} \sqrt{5} = \phi$,
+so $\phi$ is a fixed point of the function $f$.
+#+BEGIN_SRC scheme
+  (define tolerance 0.00001)
+
+  (define (fixed-point f first-guess)
+    (define (close-enough? v1 v2)
+      (< (abs (- v1 v2)) tolerance))
+    (define (try guess)
+      (let ((next (f guess)))
+        (if (close-enough? guess next)
+            next
+            (try next))))
+    (try first-guess))
+
+  (fixed-point (lambda (x) (+ 1 (/ 1 x)))
+               1.0)                       ; => 1.6180327868852458
+#+END_SRC
+** 1.36 average damping
+#+BEGIN_SRC scheme
+  (define (fixed-point f first-guess)
+    (define (close-enough? v1 v2)
+      (< (abs (- v1 v2)) tolerance))
+    (define (try guess count)
+      (let ((next (f guess)))
+        (cond ((close-enough? guess next)
+               (display "Steps: ") (display count) next)
+              (else (display guess) (newline) (try next (+ count 1))))))
+    (try first-guess 0))
+
+  (fixed-point (lambda (x) (/ (log 1000) (log x)))
+               2.7)                       ; => 4.555538646763973
+
+  (fixed-point (lambda (x) (average x (/ (log 1000) (log x))))
+               2.7)                       ; => 4.555537012305688
+#+END_SRC
+Where the first fixed point is found in 32 steps. With average damping it only
+took 7 steps, so averaging clearly helped the convergence.
+** 1.37 continued fractions
+a.
+#+BEGIN_SRC scheme
+  (define (cont-frac n d k)
+    (define (frac i)
+      (if (= i k)
+          0
+          (/ (n i)
+             (+ (d i) (frac (+ i 1))))))
+    (frac 1))
+
+  (/ 1 (cont-frac (lambda (i) 1.0)
+                  (lambda (i) 1.0)
+                  13))                    ; => 1.6180555555555558
+#+END_SRC
+b. Now iterative:
+#+BEGIN_SRC scheme
+  (define (cont-frac n d k)
+    (define (iter i result)
+      (if (= i 0)
+          result
+          (iter (- i 1)
+                (/ (n i)
+                   (+ (d i) result)))))
+    (iter k 0))
+#+END_SRC
+The iterative version builds up the continued fraction in the reverse direction
+of the previous recursive one.
+** 1.38 Euler's number
+#+BEGIN_SRC scheme
+  (+ 2 (cont-frac (lambda (i) 1.0)
+                  (lambda (i) (if (= 2 (remainder i 3))
+                             (+ 2 (* 2 (floor (/ i 3))))
+                             1))
+                  100))                   ; => 2.7182818284590455
+#+END_SRC
+** 1.39 Tangent function
+#+BEGIN_SRC scheme
+  (define (tan-cf x k)
+    (cont-frac (lambda (i) (if (= i 1) x (- (square x))))
+               (lambda (i) (- (* 2 i) 1))
+               k))
+#+END_SRC
+** 1.40 roots of cubic functions
+#+BEGIN_SRC scheme
+  (define (cube x) (* x x x))
+
+  (define (cubic a b c)
+    (lambda (x) (+ (cube x) (* a (square x)) (* b x) c)))
+
+  (newtons-method (cubic 5 2 7) 1)        ; => -4.8839595831286085
+#+END_SRC
+** 1.41 double
+#+BEGIN_SRC scheme
+  (define (double f)
+    (lambda (x) (f (f x))))
+
+  (((double (double double)) inc) 5)      ; => 21
+#+END_SRC
+** 1.42 composition
+#+BEGIN_SRC scheme
+  (define (compose f g)
+    (lambda (x) (f (g x))))
+
+  ((compose square inc) 6)                ; => 49
+#+END_SRC
+** 1.43 repeated
+#+BEGIN_SRC scheme
+  (define (repeated f n)
+    (define (iter g i)
+      (if (= i n)
+          g
+          (iter (compose f g) (+ i 1))))
+    (iter (lambda (x) x) 0))
+
+  ((repeated square 2) 5)                 ; => 625
+#+END_SRC
+** 1.44 n-fold smoothed function
+#+BEGIN_SRC scheme
+  (define (smooth f)
+    (define dx 0.00001)
+    (define (average x y z) (/ (+ x y z) 3))
+    (lambda (x) (average (f (- x dx)) (f x) (f (+ x dx)))))
+
+  (define (smooth-n f n)
+    ((repeated smooth n) f))
+#+END_SRC
+** 1.45 nth roots
+#+BEGIN_SRC scheme
+  (define (average-damp f)
+    (lambda (x) (average x (f x))))
+
+  (define (^ n p)
+    ((repeated (lambda (x) (* x n)) (- p 1)) n))
+
+  (define (floor-pow-2 n)
+    (define (iter k p)
+      (if (< k 2)
+          p
+          (iter (/ k 2) (+ p 1))))
+    (iter n 0))
+
+  (define (root-n x n)
+    (fixed-point ((repeated average-damp (floor-pow-2 n))
+                  (lambda (y) (/ x (^ y (- n 1)))))
+                 1.0))
+
+  (root-n (^ 3 11) 11)                    ; => 3.000002135562327
+  (root-n (^ 5 17) 17)                    ; => 5.00000013298386
+#+END_SRC
+
+** 1.46 iterative improvement
+#+BEGIN_SRC scheme
+  (define (iterative-improve good-enough? improve)
+    (define (iter guess)
+      (let ((next (improve guess)))
+        (if (good-enough? guess next)
+            next
+            (iter next))))
+    iter)
+
+  (define tolerance 0.00001)
+  (define (close-enough? v1 v2)
+    (< (abs (- v1 v2)) tolerance))
+
+  (define (fixed-point f first-guess)
+    ((iterative-improve close-enough?
+                        (lambda (x) (f x)))
+     first-guess))
+
+  (define (sqrt x)
+    ((iterative-improve close-enough?
+                        (lambda (y) (average y (/ x y))))
+     1.0))
+#+END_SRC
+* 2 Building Abstractions with Data
+* 3 Modularity, Objects, and State
+* 4 Metalinguistic Abstraction
+* 5 Computing with Register Machines
